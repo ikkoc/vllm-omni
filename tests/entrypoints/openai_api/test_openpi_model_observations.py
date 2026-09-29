@@ -22,7 +22,7 @@ from tests.helpers.client import (
     build_openpi_droid_observation,
 )
 from tests.helpers.runtime import pi0_make_dummy_obs
-from vllm_omni.entrypoints.openpi.connection import RobotRealtimeConnection
+from vllm_omni.entrypoints.openpi.connection import RobotRealtimeConnection, _pack, _unpack
 from vllm_omni.entrypoints.openpi.serving import ServingRealtimeRobotOpenPI
 from vllm_omni.outputs import OmniRequestOutput
 
@@ -77,8 +77,9 @@ def _model_case(model):
 @pytest.mark.parametrize("model", ["pi0", "pi05", "gr00t", "dreamzero"])
 @pytest.mark.parametrize("invalid_horizon", [False, True], ids=["valid", "invalid-horizon"])
 def test_model_observations_through_openpi(model, invalid_horizon):
-    # Use the official client codec without patching the serving transport.
-    codec = pytest.importorskip("openpi_client.msgpack_numpy")
+    # Exercise the mandatory serving codec without patching the transport or
+    # requiring optional client packages in L1 CI. Official client interoperability
+    # is tested separately in test_openpi_connection.py.
     observations, expected_actions, policy_config = _model_case(model)
     horizon = 40 if model == "gr00t" else expected_actions.shape[-2]
 
@@ -114,10 +115,10 @@ def test_model_observations_through_openpi(model, invalid_horizon):
         await RobotRealtimeConnection(websocket, serving).handle_connection()
 
     with TestClient(app) as client, client.websocket_connect("/v1/realtime/robot/openpi") as websocket:
-        assert codec.unpackb(websocket.receive_bytes()) == policy_config
+        assert _unpack(websocket.receive_bytes()) == policy_config
         for index, observation in enumerate(observations):
-            websocket.send_bytes(codec.packb({**observation, "seed": 42}))
-            response = codec.unpackb(websocket.receive_bytes())
+            websocket.send_bytes(_pack({**observation, "seed": 42}))
+            response = _unpack(websocket.receive_bytes())
             if invalid_horizon:
                 assert response == {"type": "error", "message": "Internal inference error"}
             else:
@@ -128,5 +129,5 @@ def test_model_observations_through_openpi(model, invalid_horizon):
             assert params.seed == 42
             assert params.extra_args["session_id"] == observation["session_id"]
             assert params.extra_args["reset"] is (index == 0)
-        websocket.send_bytes(codec.packb({"endpoint": "reset"}))
-        assert codec.unpackb(websocket.receive_bytes()) == {"status": "reset successful"}
+        websocket.send_bytes(_pack({"endpoint": "reset"}))
+        assert _unpack(websocket.receive_bytes()) == {"status": "reset successful"}
