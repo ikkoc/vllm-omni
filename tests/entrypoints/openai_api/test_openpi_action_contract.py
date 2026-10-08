@@ -28,6 +28,41 @@ def test_named_chunks_preserve_batch_layout_and_independent_dimensions(shape):
     assert actions["arm"].shape == shape
 
 
+@pytest.mark.parametrize("shape", [(4, 3), (1, 4, 3), (2, 4, 3)])
+@pytest.mark.parametrize("key", ["default", "arm"])
+def test_single_key_chunk_validates_scalar_dimension_without_unwrapping(shape, key):
+    chunk = np.zeros(shape, dtype=np.float32)
+    actions = {key: chunk}
+    metadata = {"action_dim": 3, "horizon": 4, "raw_action_dim": 80}
+    validate_action_output(actions, metadata, {"action_dim": 3, "action_horizon": 4, "action_keys": [key]})
+    assert list(actions) == [key]
+    assert actions[key] is chunk
+    assert chunk.shape == shape
+    assert metadata == {"action_dim": 3, "horizon": 4, "raw_action_dim": 80}
+
+
+@pytest.mark.parametrize(
+    "metadata,config,message",
+    [
+        ({}, {"action_dim": 2}, "dimension"),
+        ({"action_dim": 2}, {}, "dimension"),
+        ({"action_dim": 2}, {"action_dim": 3}, "dimension"),
+        ({"action_dim": 3}, {"action_dim": 2}, "dimension"),
+        ({}, {"action_dim": 3, "action_keys": ["arm", "gripper"]}, "keys"),
+    ],
+)
+def test_single_key_chunk_rejects_wrong_dimensions_and_missing_components(metadata, config, message):
+    with pytest.raises(ValueError, match=message):
+        validate_action_output({"arm": np.zeros((1, 4, 3))}, metadata, config)
+
+
+@pytest.mark.parametrize("metadata,config", [({}, {"action_dim": 3}), ({"action_dim": 3}, {}), ({}, {"action_dim": 6})])
+def test_multiple_keys_reject_scalar_dimension_even_when_components_have_equal_dimensions(metadata, config):
+    actions = {"left": np.zeros((1, 4, 3)), "right": np.zeros((1, 4, 3))}
+    with pytest.raises(ValueError, match="ambiguous"):
+        validate_action_output(actions, metadata, config)
+
+
 def test_maximum_horizon_is_an_upper_bound_and_default_is_not_fixed():
     validate_action_output(np.zeros((3, 2)), {"valid_steps": 0}, {"max_action_horizon": 4, "default_action_horizon": 4})
 
@@ -68,7 +103,7 @@ def test_legacy_output_without_metadata_or_shape_config():
         ({"arm": np.zeros((1, 4, 3)), "gripper": np.zeros((2, 4, 1))}, {}, {}, "share"),
         ({"arm": np.zeros((4, 3)), "gripper": np.zeros((1, 4, 1))}, {}, {}, "share"),
         ({"arm": np.zeros(3)}, {}, {}, "shape"),
-        ({"arm": np.zeros((4, 3))}, {"action_dim": 3}, {}, "dense"),
+        ({"arm": np.zeros((4, 3)), "gripper": np.zeros((4, 1))}, {"action_dim": 3}, {}, "ambiguous"),
     ],
 )
 def test_invalid_action_contract(actions, metadata, config, message):

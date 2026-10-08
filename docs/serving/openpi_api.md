@@ -146,7 +146,7 @@ can declare the output layout and action semantics known for the loaded policy:
 | `action_horizon` | Fixed number of steps in each returned chunk; must equal actual H. Existing pi0 and GR00T declarations retain this meaning. |
 | `max_action_horizon` | Optional upper bound on H; actual H may be smaller. A fixed horizon cannot exceed this bound. |
 | `default_action_horizon` | Informational default; does not impose equality on an output. |
-| `action_dim` | Final dimension D of a dense action array, after model postprocessing. |
+| `action_dim` | Final dimension D of a dense action array or the sole array in a single-key action dictionary, after model postprocessing. |
 | `action_keys` | Exact set of named action components for dictionary output; order is not significant. |
 | `action_space` | Model-defined, non-empty semantic label. If repeated in output metadata, the labels must agree. |
 
@@ -169,14 +169,22 @@ Per-inference metadata describes the actual generated output:
 | `metadata.actions` field | Meaning and validation when supplied |
 | --- | --- |
 | `horizon` | Actual returned H, a positive integer. |
-| `action_dim` | Actual dense output D, a positive integer. |
+| `action_dim` | Actual output D for dense or single-key actions, a positive integer. |
 | `valid_steps` | Number of valid steps from the start of the chunk; integer in [0, H]. Does not prescribe how many steps to execute. |
 | `action_space` | Optional repeated semantic label, checked against the handshake. |
 
-Scalar `action_dim` is defined only for dense actions. Named components can
-have different dimensions; Phase 1 uses `action_keys` and leaves a per-key
-dimension schema for future work. It does not interpret a scalar dimension as
-the sum of named components. Metadata fields `raw_action_dim`, `action_mode`,
+Scalar `action_dim` applies to dense actions and to the sole array in a
+single-key action dictionary, regardless of the key's name. For example,
+MiniCPM-RobotManip's `{"default": actions}` can advertise `action_dim: 80`
+for an array of shape `[1, 30, 80]` without unwrapping the dictionary.
+Configured `action_keys`, when present, must still match exactly; a missing
+component is not accepted just because only one key remains.
+
+Multiple named components can have different dimensions. Scalar `action_dim`
+is rejected for multi-key output, even when all components have the same D;
+it is not interpreted as each component's dimension or their sum. Phase 1
+uses `action_keys` and leaves a per-key dimension schema for future work.
+Metadata fields `raw_action_dim`, `action_mode`,
 `domain_id`, and unknown model extensions remain preserved by the formatter.
 In particular, a raw model dimension need not equal the final action dimension.
 
@@ -190,7 +198,7 @@ A policy postprocessor can produce the existing diffusion envelope:
     "metadata": {
         "actions": {
             "horizon": 4,
-            "action_dim": 3,  # dense actions only
+            "action_dim": 3,  # dense or single-key actions
             "valid_steps": 4,
             "raw_action_dim": 32,
             "action_mode": "policy",

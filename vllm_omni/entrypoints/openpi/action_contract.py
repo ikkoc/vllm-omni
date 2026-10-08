@@ -28,7 +28,8 @@ def validate_action_output(
     """Validate advertised constraints without changing the wire representation.
 
     Dense chunks use [H, D] or [B, H, D]. Named chunks share the same
-    leading dimensions, with independently sized final dimensions. Legacy
+    leading dimensions, with independently sized final dimensions. Scalar
+    action_dim also applies to the sole chunk in a single-key mapping. Legacy
     vectors remain accepted when no explicit shape contract is advertised.
     Unknown metadata, including raw model dimensions, is left untouched.
     """
@@ -59,8 +60,8 @@ def validate_action_output(
             raise ValueError("action_keys must be a list of strings")
         if not named or len(set(keys)) != len(keys) or set(chunks) != set(keys):
             raise ValueError("Action output keys do not match policy_server_config.action_keys")
-    if named and (configured_dim is not None or action_dim is not None):
-        raise ValueError("Scalar action_dim applies only to dense actions; use action_keys for named actions")
+    if named and len(chunks) > 1 and (configured_dim is not None or action_dim is not None):
+        raise ValueError("Scalar action_dim applies only to dense or single-key actions; ambiguous for multiple keys")
 
     shape_contract = any(
         value is not None
