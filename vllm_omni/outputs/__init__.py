@@ -4,12 +4,21 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 import torch
 from PIL import Image
 from vllm.outputs import CompletionOutput, RequestOutput
 from vllm.v1.outputs import ModelRunnerOutput
 
 from vllm_omni.inputs.data import OmniPromptType
+
+
+@dataclass
+class StagePostWarmupMemoryStats:
+    """Model-owned allocator snapshot captured after stage warmup."""
+
+    allocated_bytes: int
+    reserved_bytes: int
 
 
 @dataclass
@@ -64,6 +73,11 @@ class OmniModelRunnerOutput(ModelRunnerOutput):
     # MRv2 consumers must treat the value as immutable and must not perform
     # another device-to-host conversion or rebuild it from sampler tensors.
     sampled_token_ids_materialized: bool = False
+    # Self-contained generation models may yield multiple outputs for one
+    # input unit. Keep these requests scheduled until the model finishes.
+    pending_generation_req_ids: set[str] = field(default_factory=set)
+    # Request-local sampler failures, resolved at the existing token-copy boundary.
+    invalid_logits_req_ids: set[str] = field(default_factory=set)
 
     @classmethod
     def with_kv_conn_output_only(cls, kv_connector_output: Any) -> "OmniModelRunnerOutput":
@@ -86,6 +100,7 @@ _REQUEST_OUTPUT_CONTENT_ATTRS = (
     "prompt",
     "prompt_token_ids",
     "prompt_logprobs",
+    "prompt_token_id_logprobs",
     "outputs",
     "finished",
     "lora_request",
@@ -149,6 +164,7 @@ class OmniRequestOutput(RequestOutput):
     prompt: OmniPromptType | None = None
     prompt_token_ids: list[int] | None = None
     prompt_logprobs: Any = None
+    prompt_token_id_logprobs: np.ndarray | None = None
     outputs: list[CompletionOutput] = field(default_factory=list)
     finished: bool = True
     metrics: Any = field(default_factory=dict)
