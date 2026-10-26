@@ -20,6 +20,26 @@ def _optional_int(values: Mapping[str, Any], key: str, *, minimum: int = 1) -> i
     return int(value)
 
 
+def validate_action_config(policy_server_config: Mapping[str, Any]) -> None:
+    """Reject invalid static action capabilities before serving requests."""
+    fixed_horizon = _optional_int(policy_server_config, "action_horizon")
+    max_horizon = _optional_int(policy_server_config, "max_action_horizon")
+    configured_dim = _optional_int(policy_server_config, "action_dim")
+    if fixed_horizon is not None and max_horizon is not None and fixed_horizon > max_horizon:
+        raise ValueError("action_horizon exceeds max_action_horizon")
+    keys = policy_server_config.get("action_keys")
+    if keys is not None:
+        if not isinstance(keys, (list, tuple)) or not all(isinstance(key, str) for key in keys):
+            raise ValueError("action_keys must be a list of strings")
+        if len(set(keys)) != len(keys):
+            raise ValueError("action_keys must not contain duplicate keys")
+        if len(keys) > 1 and configured_dim is not None:
+            raise ValueError("Scalar action_dim is ambiguous for multiple action_keys")
+    space = policy_server_config.get("action_space")
+    if space is not None and (not isinstance(space, str) or not space.strip()):
+        raise ValueError("action_space must be a non-empty string")
+
+
 def validate_action_output(
     actions: ActionOutput,
     action_metadata: Mapping[str, Any] | None,
@@ -31,6 +51,7 @@ def validate_action_output(
     leading dimensions, with independently sized final dimensions. Scalar
     action_dim also applies to the sole chunk in a single-key mapping. Legacy
     vectors remain accepted when no explicit shape contract is advertised.
+    Call validate_action_config once before using a policy configuration.
     Unknown metadata, including raw model dimensions, is left untouched.
     """
     if action_metadata is not None and not isinstance(action_metadata, Mapping):
@@ -42,8 +63,6 @@ def validate_action_output(
     horizon = _optional_int(metadata, "horizon")
     action_dim = _optional_int(metadata, "action_dim")
     valid_steps = _optional_int(metadata, "valid_steps", minimum=0)
-    if fixed_horizon is not None and max_horizon is not None and fixed_horizon > max_horizon:
-        raise ValueError("action_horizon exceeds max_action_horizon")
 
     chunks: Mapping[str, np.ndarray]
     if isinstance(actions, Mapping):
@@ -56,9 +75,7 @@ def validate_action_output(
         raise ValueError("Action output must not be empty")
     keys = policy_server_config.get("action_keys")
     if keys is not None:
-        if not isinstance(keys, (list, tuple)) or not all(isinstance(key, str) for key in keys):
-            raise ValueError("action_keys must be a list of strings")
-        if not named or len(set(keys)) != len(keys) or set(chunks) != set(keys):
+        if not named or set(chunks) != set(keys):
             raise ValueError("Action output keys do not match policy_server_config.action_keys")
     if named and len(chunks) > 1 and (configured_dim is not None or action_dim is not None):
         raise ValueError("Scalar action_dim applies only to dense or single-key actions; ambiguous for multiple keys")
@@ -92,10 +109,9 @@ def validate_action_output(
             if expected is not None and actual_dim != expected:
                 raise ValueError(f"Action dimension {actual_dim} does not match declared action_dim {expected}")
 
-    for source in (policy_server_config, metadata):
-        space = source.get("action_space")
-        if space is not None and (not isinstance(space, str) or not space.strip()):
-            raise ValueError("action_space must be a non-empty string")
+    space = metadata.get("action_space")
+    if space is not None and (not isinstance(space, str) or not space.strip()):
+        raise ValueError("action_space must be a non-empty string")
     configured_space = policy_server_config.get("action_space")
     output_space = metadata.get("action_space")
     if configured_space is not None and output_space is not None and configured_space != output_space:

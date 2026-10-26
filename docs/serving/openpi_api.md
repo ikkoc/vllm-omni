@@ -193,6 +193,11 @@ execution scheduler. Their units and semantics must be documented by the
 policy. A generated chunk's horizon is distinct from how many steps a client
 chooses to execute before observing and replanning.
 
+Static capability types and consistency are checked when the serving layer is
+initialized, so invalid configuration fails before requests are accepted.
+Checks that require actual action arrays or per-inference metadata run on each
+output.
+
 Per-inference metadata describes the actual generated output:
 
 | `metadata.actions` field | Meaning and validation when supplied |
@@ -204,8 +209,8 @@ Per-inference metadata describes the actual generated output:
 
 Scalar `action_dim` applies to dense actions and to the sole array in a
 single-key action dictionary, regardless of the key's name. For example,
-MiniCPM-RobotManip's `{"default": actions}` can advertise `action_dim: 80`
-for an array of shape `[1, 30, 80]` without unwrapping the dictionary.
+a policy returning `{"default": actions}` with an array of shape `[1, 30, 80]`
+can advertise `action_dim: 80` without unwrapping the dictionary.
 Configured `action_keys`, when present, must still match exactly; a missing
 component is not accepted just because only one key remains.
 

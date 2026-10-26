@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType, OmniSamplingParams
     from vllm_omni.outputs import OmniRequestOutput
 
-from vllm_omni.entrypoints.openpi.action_contract import ActionOutput, validate_action_output
+from vllm_omni.entrypoints.openpi.action_contract import ActionOutput, validate_action_config, validate_action_output
 
 logger = init_logger(__name__)
 
@@ -91,6 +91,7 @@ class ServingRealtimeRobotOpenPI:
         self.model_name = model_name
         policy_model_config = self._get_policy_model_config(engine_client)
         self.policy_server_config = PolicyServerConfig.from_model_config(policy_model_config)
+        validate_action_config(self.policy_server_config.values)
         self.prompt_builder = self._load_prompt_builder(engine_client, policy_model_config, self.policy_server_config)
         self._request_counter = count()
 

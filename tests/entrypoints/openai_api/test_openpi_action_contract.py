@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from vllm_omni.entrypoints.openpi.action_contract import validate_action_output
+from vllm_omni.entrypoints.openpi.action_contract import validate_action_config, validate_action_output
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
@@ -53,6 +53,7 @@ def test_single_key_chunk_validates_scalar_dimension_without_unwrapping(shape, k
 )
 def test_single_key_chunk_rejects_wrong_dimensions_and_missing_components(metadata, config, message):
     with pytest.raises(ValueError, match=message):
+        validate_action_config(config)
         validate_action_output({"arm": np.zeros((1, 4, 3))}, metadata, config)
 
 
@@ -108,4 +109,5 @@ def test_legacy_output_without_metadata_or_shape_config():
 )
 def test_invalid_action_contract(actions, metadata, config, message):
     with pytest.raises(ValueError, match=message):
+        validate_action_config(config)
         validate_action_output(actions, metadata, config)
